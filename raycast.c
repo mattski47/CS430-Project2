@@ -10,6 +10,10 @@
 #include <ctype.h>
 #include <string.h>
 
+#define CAMERA 0
+#define SPHERE 1
+#define PLANE 2
+
 typedef struct {
     int kind;
     union {
@@ -31,6 +35,7 @@ typedef struct {
 } Object;
 
 int line = 1;
+Object** objects;
 
 void read_scene(char*);
 void skip_ws(FILE*);
@@ -44,6 +49,7 @@ double* next_vector(FILE*);
  * 
  */
 int main(int argc, char** argv) {
+    objects = malloc(sizeof(Object*)*129);
     read_scene("test.json");
     
     return (EXIT_SUCCESS);
@@ -62,15 +68,19 @@ void read_scene(char* filename) {
     expect_c(json, '[');
     skip_ws(json);
     
+    int i = 0;
     while (1) {
         c = next_c(json);
         if (c == ']') {
             fprintf(stderr, "Error: This scene is empty.\n");
             fclose(json);
+            objects[i] = NULL;
             return;
         }
         
         if (c == '{') {
+            objects[i] = malloc(sizeof(Object));
+            
             skip_ws(json);
             
             char* key = next_string(json);
@@ -85,11 +95,11 @@ void read_scene(char* filename) {
             
             char* value = next_string(json);
             if (strcmp(value, "camera") == 0) {
-                
+                objects[i]->kind = CAMERA;
             } else if (strcmp(value, "sphere") == 0) {
-                
+                objects[i]->kind = SPHERE;
             } else if (strcmp(value, "plane") == 0) {
-                
+                objects[i]->kind = PLANE;
             } else {
                 fprintf(stderr, "Error: Unknown type, '%s', on line number %d.\n", value, line);
                 exit(1);
@@ -113,12 +123,59 @@ void read_scene(char* filename) {
                         (strcmp(key, "height") == 0) || 
                         (strcmp(key, "radius") == 0)) {
                         double value = next_number(json);
+                        if (objects[i]->kind == CAMERA) {
+                            if (strcmp(key, "width") == 0)
+                                objects[i]->camera.width = value;
+                            else if (strcmp(key, "height") == 0)
+                                objects[i]->camera.height = value;
+                            else
+                                fprintf(stderr, "Error: Unknown property '%s' for 'camera' on line number %d.\n", key, line);
+                        } else if (objects[i]->kind == SPHERE) {
+                            if (strcmp(key, "radius") == 0) {
+                                objects[i]->sphere.radius = value;
+                            } else {
+                                fprintf(stderr, "Error: Unknown property '%s' for 'sphere' on line number %d.\n", key, line);
+                            }
+                        } else if (objects[i]->kind == PLANE) {
+                            fprintf(stderr, "Error: Unknown property '%s' for 'plane' on line number %d.\n", key, line);
+                        }
                     } else if ((strcmp(key, "color") == 0) || 
                                (strcmp(key, "position") == 0) || 
                                (strcmp(key, "normal") == 0)) {
                         double* value = next_vector(json);
+                        if (objects[i]->kind == CAMERA) {
+                            fprintf(stderr, "Error: Unknown property '%s' for 'camera' on line number %d.\n", key, line);
+                        } else if (objects[i]->kind == SPHERE) {
+                            if (strcmp(key, "color") == 0) {
+                                objects[i]->sphere.color[0] = value[0];
+                                objects[i]->sphere.color[1] = value[1];
+                                objects[i]->sphere.color[2] = value[2];
+                            } else if (strcmp(key, "position") == 0) {
+                                objects[i]->sphere.position[0] = value[0];
+                                objects[i]->sphere.position[1] = value[1];
+                                objects[i]->sphere.position[2] = value[2];
+                            } else {
+                                fprintf(stderr, "Error: Unknown property '%s' for 'sphere' on line number %d.\n", key, line);
+                            }
+                        } else if (objects[i]->kind == PLANE) {
+                            if (strcmp(key, "color") == 0) {
+                                objects[i]->plane.color[0] = value[0];
+                                objects[i]->plane.color[1] = value[1];
+                                objects[i]->plane.color[2] = value[2];
+                            } else if (strcmp(key, "position") == 0) {
+                                objects[i]->plane.position[0] = value[0];
+                                objects[i]->plane.position[1] = value[1];
+                                objects[i]->plane.position[2] = value[2];
+                            } else if (strcmp(key, "normal") == 0) {
+                                objects[i]->plane.normal[0] = value[0];
+                                objects[i]->plane.normal[1] = value[1];
+                                objects[i]->plane.normal[2] = value[2];
+                            } else {
+                                fprintf(stderr, "Error: Unknown property '%s' for 'plane' on line number %d.\n", key, line);
+                            }
+                        }
                     } else {
-                        fprintf(stderr, "Error: Unknown property, '%s', on line number %d.\n", key, line);
+                        fprintf(stderr, "Error: Unknown property '%s' on line number %d.\n", key, line);
                         exit(1);
                     }
                     
@@ -129,17 +186,29 @@ void read_scene(char* filename) {
                 }
             }
             
+            i++;
             skip_ws(json);
             c = next_c(json);
             if (c == ',') {
                 skip_ws(json);
             } else if (c == ']') {
+                objects[i] = NULL;
                 fclose(json);
                 return;
             } else {
                 fprintf(stderr, "Error: Expecting ',' or ']' on line number %d.\n", line);
                 exit(1);
             }
+            if (i == 129) {
+                objects[i] = NULL;
+                fclose(json);
+                fprintf(stderr, "Error: Too many objects in file.\n");
+                return;
+            }
+            
+        } else {
+            fprintf(stderr, "Error: Expecting '{' on line number %d.\n", line);
+            exit(1);
         }
     }
 }
