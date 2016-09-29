@@ -216,8 +216,10 @@ char* next_string(FILE* json) {
 
 double next_number(FILE* json) {
     double value;
-    fscanf(json, "%f", &value);
-    // error check here
+     if (fscanf(json, "%f", &value) != 1) {
+         fprintf(stderr, "Error: Number value not found on line number %d.\n", line);
+         exit(1);
+     }
     return value;
 }
 
