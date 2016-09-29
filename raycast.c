@@ -10,6 +10,28 @@
 #include <ctype.h>
 #include <string.h>
 
+typedef struct {
+    int kind;
+    union {
+        struct {
+            double width;
+            double height;
+        } camera;
+        struct {
+            double color[3];
+            double position[3];
+            double radius;
+        } sphere;
+        struct {
+            double color[3];
+            double position[3];
+            double normal[3];
+        } plane;
+    };
+} Object;
+
+int line = 1;
+
 void read_scene(char*);
 void skip_ws(FILE*);
 void expect_c(FILE*, int);
@@ -17,8 +39,6 @@ int next_c(FILE*);
 char* next_string(FILE*);
 double next_number(FILE*);
 double* next_vector(FILE*);
-
-int line = 1;
 
 /*
  * 
