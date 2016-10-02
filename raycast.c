@@ -19,15 +19,13 @@
 
 typedef struct {
     int kind;
+    double color[3];
+    double position[3];
     union {
         struct {
-            double color[3];
-            double position[3];
             double radius;
         } sphere;
         struct {
-            double color[3];
-            double position[3];
             double normal[3];
         } plane;
     };
@@ -61,6 +59,7 @@ int next_c(FILE*);
 char* next_string(FILE*);
 double next_number(FILE*);
 double* next_vector(FILE*);
+void output_p6();
 
 int line = 1;
 Object** objects;
@@ -87,8 +86,6 @@ int main(int argc, char** argv) {
     double pixheight = h/M;
     double pixwidth = w/N;
     
-    FILE* output = fopen("ouput.ppm", "w");
-    
     pixmap = malloc(sizeof(Pixel)*M*N);
     int index = 0;
     for (int y=0; y<M; y++) {
@@ -106,20 +103,39 @@ int main(int argc, char** argv) {
                 
                 switch (objects[i]->kind) {
                     case 0:
-                        t = sphere_intersect(Ro, Rd, objects[i]->sphere.position, objects[i]->sphere.radius);
+                        t = sphere_intersect(Ro, Rd, objects[i]->position, objects[i]->sphere.radius);
                         break;
                     case 1:
-                        t = plane_intersect(Ro, Rd, objects[i]->plane.position, objects[i]->plane.normal);
+                        t = plane_intersect(Ro, Rd, objects[i]->position, objects[i]->plane.normal);
                         break;
                     default:
                         fprintf(stderr, "Error: Unknown object.\n");
                         exit(1);
                 }
-                if (t > 0 && t < best_t)
+                
+                if (t > 0 && t < best_t) {
                     best_t = t;
+                    object = malloc(sizeof(Object));
+                    memcpy(object, objects[i], sizeof(Object));
+                }
             }
+            
+            if (best_t > 0 && best_t != INFINITY) {
+                pixmap[index].r = (unsigned char)(object->color[0]*MAXCOLOR);
+                pixmap[index].g = (unsigned char)(object->color[1]*MAXCOLOR);
+                pixmap[index].b = (unsigned char)(object->color[2]*MAXCOLOR);
+            } else {
+                pixmap[index].r = 255;
+                pixmap[index].g = 255;
+                pixmap[index].b = 255;
+            }
+            
+            index++;
         }
     }
+    
+    FILE* output = fopen("ouput.ppm", "w");
+    output_p6(output, M, N);
     
     return (EXIT_SUCCESS);
 }
@@ -209,26 +225,26 @@ void read_scene(char* filename) {
                             double* value = next_vector(json);
                             if (objects[i]->kind == SPHERE) {
                                 if (strcmp(key, "color") == 0) {
-                                    objects[i]->sphere.color[0] = value[0];
-                                    objects[i]->sphere.color[1] = value[1];
-                                    objects[i]->sphere.color[2] = value[2];
+                                    objects[i]->color[0] = value[0];
+                                    objects[i]->color[1] = value[1];
+                                    objects[i]->color[2] = value[2];
                                 } else if (strcmp(key, "position") == 0) {
-                                    objects[i]->sphere.position[0] = value[0];
-                                    objects[i]->sphere.position[1] = value[1];
-                                    objects[i]->sphere.position[2] = value[2];
+                                    objects[i]->position[0] = value[0];
+                                    objects[i]->position[1] = value[1];
+                                    objects[i]->position[2] = value[2];
                                 } else {
                                     fprintf(stderr, "Error: Unknown property '%s' for 'sphere' on line number %d.\n", key, line);
                                     exit(1);
                                 }
                             } else if (objects[i]->kind == PLANE) {
                                 if (strcmp(key, "color") == 0) {
-                                    objects[i]->plane.color[0] = value[0];
-                                    objects[i]->plane.color[1] = value[1];
-                                    objects[i]->plane.color[2] = value[2];
+                                    objects[i]->color[0] = value[0];
+                                    objects[i]->color[1] = value[1];
+                                    objects[i]->color[2] = value[2];
                                 } else if (strcmp(key, "position") == 0) {
-                                    objects[i]->plane.position[0] = value[0];
-                                    objects[i]->plane.position[1] = value[1];
-                                    objects[i]->plane.position[2] = value[2];
+                                    objects[i]->position[0] = value[0];
+                                    objects[i]->position[1] = value[1];
+                                    objects[i]->position[2] = value[2];
                                 } else if (strcmp(key, "normal") == 0) {
                                     objects[i]->plane.normal[0] = value[0];
                                     objects[i]->plane.normal[1] = value[1];
@@ -414,4 +430,12 @@ double* next_vector(FILE* json) {
     
     expect_c(json, ']');
     return v;
+}
+
+// outputs data in buffer to output file
+void output_p6(FILE* outputfp, int h, int w) {
+    // create header
+    fprintf(outputfp, "P6\n%d %d\n%d\n", h, w, MAXCOLOR);
+    // writes buffer to output Pixel by Pixel
+    fwrite(pixmap, sizeof(Pixel), w*h, outputfp);
 }
