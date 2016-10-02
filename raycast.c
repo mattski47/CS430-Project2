@@ -9,18 +9,17 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
+#include <math.h>
 
-#define CAMERA 0
-#define SPHERE 1
-#define PLANE 2
+#define SPHERE 0
+#define PLANE 1
+#define HEIGHT 20
+#define WIDTH 20
+#define MAXCOLOR 255
 
 typedef struct {
     int kind;
     union {
-        struct {
-            double width;
-            double height;
-        } camera;
         struct {
             double color[3];
             double position[3];
@@ -34,10 +33,28 @@ typedef struct {
     };
 } Object;
 
-int line = 1;
-Object** objects;
+typedef struct {
+    unsigned char r;
+    unsigned char g;
+    unsigned char b;
+} Pixel;
+
+static inline double sqr(double v) {
+    return v*v;
+}
+
+static inline void normalize(double* v) {
+    double len = sqrt(sqr(v[0]) + sqr(v[1]) + sqr(v[2]));
+    
+    v[0] /= len;
+    v[1] /= len;
+    v[2] /= len;
+}
 
 void read_scene(char*);
+void set_camera(FILE*);
+double sphere_intersect(double*, double*, double*, double);
+double plane_intersect(double*, double*, double*, double*);
 void skip_ws(FILE*);
 void expect_c(FILE*, int);
 int next_c(FILE*);
@@ -45,12 +62,64 @@ char* next_string(FILE*);
 double next_number(FILE*);
 double* next_vector(FILE*);
 
+int line = 1;
+Object** objects;
+Pixel* pixmap;
+
+// camera
+double h = 0.7;
+double w = 0.7;
+
 /*
  * 
  */
 int main(int argc, char** argv) {
     objects = malloc(sizeof(Object*)*129);
     read_scene("test.json");
+    
+    // more camera
+    double cx = 0;
+    double cy = 0;
+    
+    int M = HEIGHT;
+    int N = WIDTH;
+    
+    double pixheight = h/M;
+    double pixwidth = w/N;
+    
+    FILE* output = fopen("ouput.ppm", "w");
+    
+    pixmap = malloc(sizeof(Pixel)*M*N);
+    int index = 0;
+    for (int y=0; y<M; y++) {
+        for (int x=0; x<N; x++) {
+            double Ro[3] = {cx, cy, 0};
+            double Rd[3] = {cx - (w/2) + pixwidth*(x + 0.5),
+                            cy - (h/2) + pixheight*(y + 0.5),
+                            1};
+            normalize(Rd);
+            
+            double best_t = INFINITY;
+            Object* object;
+            for (int i=0; objects[i] != NULL; i++) {
+                double t = 0;
+                
+                switch (objects[i]->kind) {
+                    case 0:
+                        t = sphere_intersect(Ro, Rd, objects[i]->sphere.position, objects[i]->sphere.radius);
+                        break;
+                    case 1:
+                        t = plane_intersect(Ro, Rd, objects[i]->plane.position, objects[i]->plane.normal);
+                        break;
+                    default:
+                        fprintf(stderr, "Error: Unknown object.\n");
+                        exit(1);
+                }
+                if (t > 0 && t < best_t)
+                    best_t = t;
+            }
+        }
+    }
     
     return (EXIT_SUCCESS);
 }
@@ -93,9 +162,10 @@ void read_scene(char* filename) {
             expect_c(json, ':');
             skip_ws(json);
             
+            
             char* value = next_string(json);
             if (strcmp(value, "camera") == 0) {
-                objects[i]->kind = CAMERA;
+                set_camera(json);
             } else if (strcmp(value, "sphere") == 0) {
                 objects[i]->kind = SPHERE;
             } else if (strcmp(value, "plane") == 0) {
@@ -107,86 +177,82 @@ void read_scene(char* filename) {
             
             skip_ws(json);
             
-            while (1) {
-                c = next_c(json);
-                if (c == '}') {
-                    break;
-                } else if (c == ',') {
-                    skip_ws(json);
-                    char* key = next_string(json);
-                    
-                    skip_ws(json);
-                    expect_c(json, ':');
-                    skip_ws(json);
-                    
-                    if ((strcmp(key, "width") == 0) || 
-                        (strcmp(key, "height") == 0) || 
-                        (strcmp(key, "radius") == 0)) {
-                        double value = next_number(json);
-                        if (objects[i]->kind == CAMERA) {
-                            if (strcmp(key, "width") == 0)
-                                objects[i]->camera.width = value;
-                            else if (strcmp(key, "height") == 0)
-                                objects[i]->camera.height = value;
-                            else
-                                fprintf(stderr, "Error: Unknown property '%s' for 'camera' on line number %d.\n", key, line);
-                        } else if (objects[i]->kind == SPHERE) {
-                            if (strcmp(key, "radius") == 0) {
-                                objects[i]->sphere.radius = value;
-                            } else {
-                                fprintf(stderr, "Error: Unknown property '%s' for 'sphere' on line number %d.\n", key, line);
-                            }
-                        } else if (objects[i]->kind == PLANE) {
-                            fprintf(stderr, "Error: Unknown property '%s' for 'plane' on line number %d.\n", key, line);
-                        }
-                    } else if ((strcmp(key, "color") == 0) || 
-                               (strcmp(key, "position") == 0) || 
-                               (strcmp(key, "normal") == 0)) {
-                        double* value = next_vector(json);
-                        if (objects[i]->kind == CAMERA) {
-                            fprintf(stderr, "Error: Unknown property '%s' for 'camera' on line number %d.\n", key, line);
-                        } else if (objects[i]->kind == SPHERE) {
-                            if (strcmp(key, "color") == 0) {
-                                objects[i]->sphere.color[0] = value[0];
-                                objects[i]->sphere.color[1] = value[1];
-                                objects[i]->sphere.color[2] = value[2];
-                            } else if (strcmp(key, "position") == 0) {
-                                objects[i]->sphere.position[0] = value[0];
-                                objects[i]->sphere.position[1] = value[1];
-                                objects[i]->sphere.position[2] = value[2];
-                            } else {
-                                fprintf(stderr, "Error: Unknown property '%s' for 'sphere' on line number %d.\n", key, line);
-                            }
-                        } else if (objects[i]->kind == PLANE) {
-                            if (strcmp(key, "color") == 0) {
-                                objects[i]->plane.color[0] = value[0];
-                                objects[i]->plane.color[1] = value[1];
-                                objects[i]->plane.color[2] = value[2];
-                            } else if (strcmp(key, "position") == 0) {
-                                objects[i]->plane.position[0] = value[0];
-                                objects[i]->plane.position[1] = value[1];
-                                objects[i]->plane.position[2] = value[2];
-                            } else if (strcmp(key, "normal") == 0) {
-                                objects[i]->plane.normal[0] = value[0];
-                                objects[i]->plane.normal[1] = value[1];
-                                objects[i]->plane.normal[2] = value[2];
-                            } else {
+            if (strcmp(value, "camera") != 0) {
+                while (1) {
+                    c = next_c(json);
+                    if (c == '}') {
+                        break;
+                    } else if (c == ',') {
+                        skip_ws(json);
+                        char* key = next_string(json);
+
+                        skip_ws(json);
+                        expect_c(json, ':');
+                        skip_ws(json);
+
+                        if (strcmp(key, "radius") == 0) {
+                            double value = next_number(json);
+                            if (objects[i]->kind == SPHERE) {
+                                if (strcmp(key, "radius") == 0) {
+                                    objects[i]->sphere.radius = value;
+                                } else {
+                                    fprintf(stderr, "Error: Unknown property '%s' for 'sphere' on line number %d.\n", key, line);
+                                    exit(1);
+                                }
+                            } else if (objects[i]->kind == PLANE) {
                                 fprintf(stderr, "Error: Unknown property '%s' for 'plane' on line number %d.\n", key, line);
+                                    exit(1);
                             }
+                        } else if ((strcmp(key, "color") == 0) || 
+                                   (strcmp(key, "position") == 0) || 
+                                   (strcmp(key, "normal") == 0)) {
+                            double* value = next_vector(json);
+                            if (objects[i]->kind == SPHERE) {
+                                if (strcmp(key, "color") == 0) {
+                                    objects[i]->sphere.color[0] = value[0];
+                                    objects[i]->sphere.color[1] = value[1];
+                                    objects[i]->sphere.color[2] = value[2];
+                                } else if (strcmp(key, "position") == 0) {
+                                    objects[i]->sphere.position[0] = value[0];
+                                    objects[i]->sphere.position[1] = value[1];
+                                    objects[i]->sphere.position[2] = value[2];
+                                } else {
+                                    fprintf(stderr, "Error: Unknown property '%s' for 'sphere' on line number %d.\n", key, line);
+                                    exit(1);
+                                }
+                            } else if (objects[i]->kind == PLANE) {
+                                if (strcmp(key, "color") == 0) {
+                                    objects[i]->plane.color[0] = value[0];
+                                    objects[i]->plane.color[1] = value[1];
+                                    objects[i]->plane.color[2] = value[2];
+                                } else if (strcmp(key, "position") == 0) {
+                                    objects[i]->plane.position[0] = value[0];
+                                    objects[i]->plane.position[1] = value[1];
+                                    objects[i]->plane.position[2] = value[2];
+                                } else if (strcmp(key, "normal") == 0) {
+                                    objects[i]->plane.normal[0] = value[0];
+                                    objects[i]->plane.normal[1] = value[1];
+                                    objects[i]->plane.normal[2] = value[2];
+                                } else {
+                                    fprintf(stderr, "Error: Unknown property '%s' for 'plane' on line number %d.\n", key, line);
+                                    exit(1);
+                                }
+                            }
+                        } else {
+                            fprintf(stderr, "Error: Unknown property '%s' on line number %d.\n", key, line);
+                            exit(1);
                         }
+
+                        skip_ws(json);
                     } else {
-                        fprintf(stderr, "Error: Unknown property '%s' on line number %d.\n", key, line);
+                        fprintf(stderr, "Error: Unexpected value on line number %d.\n", line);
                         exit(1);
                     }
-                    
-                    skip_ws(json);
-                } else {
-                    fprintf(stderr, "Error: Unexpected value on line number %d.\n", line);
-                    exit(1);
                 }
+
+                i++;
             }
             
-            i++;
             skip_ws(json);
             c = next_c(json);
             if (c == ',') {
@@ -211,6 +277,42 @@ void read_scene(char* filename) {
             exit(1);
         }
     }
+}
+
+void set_camera(FILE* json) {
+    int c;
+    skip_ws(json);
+    
+    while (1) {
+        c = next_c(json);
+        if (c == '}') {
+            break;
+        } else if (c == ',') {
+            skip_ws(json);
+            char* key = next_string(json);
+            
+            skip_ws(json);
+            expect_c(json, ':');
+            skip_ws(json);
+            double value = next_number(json);
+            if (strcmp(key, "width") == 0) {
+                w = value;
+            } else if (strcmp(key, "height") == 0) {
+                h = value;
+            } else {
+                fprintf(stderr, "Error: Unknown property '%s' for 'camera' on line number %d.\n", key, line);
+                exit(1);
+            }
+        }
+    }
+}
+
+double sphere_intersect(double* Ro, double* Rd, double* C, double r) {
+    
+}
+
+double plane_intersect(double* Ro, double* Rd, double* P, double* N) {
+    
 }
 
 void skip_ws(FILE* json) {
