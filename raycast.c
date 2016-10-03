@@ -13,8 +13,8 @@
 
 #define SPHERE 0
 #define PLANE 1
-#define HEIGHT 100
-#define WIDTH 100
+#define HEIGHT 200
+#define WIDTH 200
 #define MAXCOLOR 255
 
 typedef struct {
@@ -102,10 +102,10 @@ int main(int argc, char** argv) {
                 double t = 0;
                 
                 switch (objects[i]->kind) {
-                    case 0:
+                    case SPHERE:
                         t = sphere_intersect(Ro, Rd, objects[i]->position, objects[i]->sphere.radius);
                         break;
-                    case 1:
+                    case PLANE:
                         t = plane_intersect(Ro, Rd, objects[i]->position, objects[i]->plane.normal);
                         break;
                     default:
@@ -136,6 +136,7 @@ int main(int argc, char** argv) {
     
     FILE* output = fopen("ouput.ppm", "w");
     output_p6(output, M, N);
+    fclose(output);
     
     return (EXIT_SUCCESS);
 }
@@ -223,6 +224,8 @@ void read_scene(char* filename) {
                                    (strcmp(key, "position") == 0) || 
                                    (strcmp(key, "normal") == 0)) {
                             double* value = next_vector(json);
+                            
+                            //printf("%f %f %f\n", value[0], value[1], value[2]);
                             if (objects[i]->kind == SPHERE) {
                                 if (strcmp(key, "color") == 0) {
                                     objects[i]->color[0] = value[0];
@@ -361,6 +364,7 @@ void skip_ws(FILE* json) {
     while(isspace(c))
         c = next_c(json);
     
+    //printf("%c", c);
     ungetc(c, json);
 }
 
@@ -384,6 +388,8 @@ int next_c(FILE* json) {
         fprintf(stderr, "Error: Unexpected end of file on line number %d.\n", line);
         exit(1);
     }
+    
+    //printf("%c", c);
     
     return c;
 }
@@ -427,10 +433,11 @@ char* next_string(FILE* json) {
 
 double next_number(FILE* json) {
     double value;
-     if (fscanf(json, "%f", &value) != 1) {
-         fprintf(stderr, "Error: Number value not found on line number %d.\n", line);
-         exit(1);
-     }
+    if (fscanf(json, "%lf", &value) != 1) {
+        fprintf(stderr, "Error: Number value not found on line number %d.\n", line);
+        exit(1);
+    }
+    //printf("%lf %d\n", value, line);
     return value;
 }
 
@@ -452,6 +459,8 @@ double* next_vector(FILE* json) {
     v[2] = next_number(json);
     skip_ws(json);
     
+    
+    //printf("%f %f %f\n", v[0], v[1], v[2]);
     expect_c(json, ']');
     return v;
 }
@@ -461,5 +470,5 @@ void output_p6(FILE* outputfp, int h, int w) {
     // create header
     fprintf(outputfp, "P6\n%d %d\n%d\n", h, w, MAXCOLOR);
     // writes buffer to output Pixel by Pixel
-    fwrite(pixmap, sizeof(Pixel), w*h, outputfp);
+    fwrite(pixmap, sizeof(Pixel), h*w, outputfp);
 }
