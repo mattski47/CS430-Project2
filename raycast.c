@@ -13,8 +13,8 @@
 
 #define SPHERE 0
 #define PLANE 1
-#define HEIGHT 20
-#define WIDTH 20
+#define HEIGHT 100
+#define WIDTH 100
 #define MAXCOLOR 255
 
 typedef struct {
@@ -346,7 +346,13 @@ double sphere_intersect(double* Ro, double* Rd, double* C, double r) {
 }
 
 double plane_intersect(double* Ro, double* Rd, double* P, double* N) {
+    double d = N[0]*P[0] + N[1]*P[1] + N[2]*P[2];
+    double t = -(N[0]*Ro[0] + N[1]*Ro[1] + N[2]*Ro[2] + d) / (N[0]*Rd[0] + N[1]*Rd[1] + N[2]*Rd[2]);
     
+    if (t > 0)
+        return t;
+    
+    return -1;
 }
 
 void skip_ws(FILE* json) {
