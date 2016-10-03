@@ -13,8 +13,8 @@
 
 #define SPHERE 0
 #define PLANE 1
-#define HEIGHT 200
-#define WIDTH 200
+#define HEIGHT 100
+#define WIDTH 100
 #define MAXCOLOR 255
 
 typedef struct {
@@ -74,7 +74,7 @@ double w = 0.7;
  */
 int main(int argc, char** argv) {
     objects = malloc(sizeof(Object*)*129);
-    read_scene("test.json");
+    read_scene("example.json");
     
     // more camera
     double cx = 0;
@@ -125,16 +125,16 @@ int main(int argc, char** argv) {
                 pixmap[index].g = (unsigned char)(object->color[1]*MAXCOLOR);
                 pixmap[index].b = (unsigned char)(object->color[2]*MAXCOLOR);
             } else {
-                pixmap[index].r = 255;
-                pixmap[index].g = 255;
-                pixmap[index].b = 255;
+                pixmap[index].r = 0;
+                pixmap[index].g = 0;
+                pixmap[index].b = 0;
             }
             
             index++;
         }
     }
     
-    FILE* output = fopen("ouput.ppm", "w");
+    FILE* output = fopen("output.ppm", "w");
     output_p6(output, M, N);
     fclose(output);
     
@@ -233,7 +233,7 @@ void read_scene(char* filename) {
                                     objects[i]->color[2] = value[2];
                                 } else if (strcmp(key, "position") == 0) {
                                     objects[i]->position[0] = value[0];
-                                    objects[i]->position[1] = value[1];
+                                    objects[i]->position[1] = -value[1];
                                     objects[i]->position[2] = value[2];
                                 } else {
                                     fprintf(stderr, "Error: Unknown property '%s' for 'sphere' on line number %d.\n", key, line);
@@ -349,9 +349,11 @@ double sphere_intersect(double* Ro, double* Rd, double* C, double r) {
 }
 
 double plane_intersect(double* Ro, double* Rd, double* P, double* N) {
-    double d = N[0]*P[0] + N[1]*P[1] + N[2]*P[2];
+    // dot product of normal and position to find distance 
+    double d = N[0]*P[0] + N[1]*P[1] + N[2]*P[2]; 
     double t = -(N[0]*Ro[0] + N[1]*Ro[1] + N[2]*Ro[2] + d) / (N[0]*Rd[0] + N[1]*Rd[1] + N[2]*Rd[2]);
     
+    // return positive number if there is an intersection
     if (t > 0)
         return t;
     
