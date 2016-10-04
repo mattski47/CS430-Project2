@@ -11,10 +11,12 @@
 #include <string.h>
 #include <math.h>
 
+// define what sphere and plane are for 'kind' in 'Object'
 #define SPHERE 0
 #define PLANE 1
 #define MAXCOLOR 255
 
+// struct that stores object data
 typedef struct {
     int kind;
     double color[3];
@@ -29,16 +31,19 @@ typedef struct {
     };
 } Object;
 
+// struct that stores color data
 typedef struct {
     unsigned char r;
     unsigned char g;
     unsigned char b;
 } Pixel;
 
+// inline function for square
 static inline double sqr(double v) {
     return v*v;
 }
 
+// inline function for normalizing a vector
 static inline void normalize(double* v) {
     double len = sqrt(sqr(v[0]) + sqr(v[1]) + sqr(v[2]));
     
@@ -61,7 +66,10 @@ double next_number(FILE*);
 double* next_vector(FILE*);
 void output_p6(FILE*);
 
+// initialize input file line counter
 int line = 1;
+
+// create arrays for storing objects and pixels
 Object** objects;
 Pixel* pixmap;
 
@@ -71,45 +79,57 @@ double w = 1;
 double cx = 0;
 double cy = 0;
 
-// height, width of image
+// height, width of output image
 int M;
 int N;
 
 int main(int argc, char** argv) {
+    // check for correct number of inputs
     if (argc != 5) {
         fprintf(stderr, "Error: Arguments should be in format: 'width' 'height' 'source' 'dest'.\n");
         exit(1);
     }
     
+    // check that 'width' is a non-zero number
     N = atoi(argv[1]);
     if (N == 0) {
         fprintf(stderr, "Error: Argument 1, 'width' must be a non-zero integer.\n");
         exit(1);
     }
     
+    // check that 'height' is a non-zero number
     M = atoi(argv[2]);
     if (M == 0) {
         fprintf(stderr, "Error: Argument 2, 'height' must be a non-zero integer.\n");
         exit(1);
     }
     
+    // open and check input file
     FILE* json = fopen(argv[3], "r");
     if (json == NULL) {
         fprintf(stderr, "Error: Could not open file '%s'.\n", argv[3]);
         exit(1);
     }
     
+    // allocate space for 128 objects
     objects = malloc(sizeof(Object*)*129);
+    
     read_scene(json);
     
+    // calculate pixel height, width
     double pixheight = h/M;
     double pixwidth = w/N;
     
+    // allocate space for number of pixels needed
     pixmap = malloc(sizeof(Pixel)*M*N);
+    // initialize pixmap index
     int index = 0;
+    // got through each spot pixel by pixel to see what color it should be
     for (int y=0; y<M; y++) {
         for (int x=0; x<N; x++) {
+            // ray origin
             double Ro[3] = {cx, cy, 0};
+            // ray destination
             double Rd[3] = {cx - (w/2) + pixwidth*(x + 0.5),
                             cy - (h/2) + pixheight*(y + 0.5),
                             1};
@@ -117,6 +137,7 @@ int main(int argc, char** argv) {
             
             double best_t = INFINITY;
             Object* object;
+            // look for intersection of an object 
             for (int i=0; objects[i] != NULL; i++) {
                 double t = 0;
                 
@@ -132,6 +153,7 @@ int main(int argc, char** argv) {
                         exit(1);
                 }
                 
+                // save object if it intersects closer to the camera
                 if (t > 0 && t < best_t) {
                     best_t = t;
                     object = malloc(sizeof(Object));
@@ -139,6 +161,7 @@ int main(int argc, char** argv) {
                 }
             }
             
+            // write color of object with the best intersection or black if there was none at this pixel
             if (best_t > 0 && best_t != INFINITY) {
                 pixmap[index].r = (unsigned char)(object->color[0]*MAXCOLOR);
                 pixmap[index].g = (unsigned char)(object->color[1]*MAXCOLOR);
@@ -153,28 +176,36 @@ int main(int argc, char** argv) {
         }
     }
     
+    // open and check output file location
     FILE* output = fopen(argv[4], "w");
     if (output == NULL) {
         fprintf(stderr, "Error: Could not create file '%s'.\n", argv[4]);
         exit(1);
     }
     
+    // write pixel data to output file then close it
     output_p6(output);
     fclose(output);
     
     return (EXIT_SUCCESS);
 }
 
+// reads object data from a json file
 void read_scene(FILE* json) {
+    // next char in file
     int c;
     
+    // look for start of json file ([)
     skip_ws(json);
     expect_c(json, '[');
     skip_ws(json);
     
+    // initialize object array index
     int i = 0;
+    // read all objects found in file
     while (1) {
         c = next_c(json);
+        // check for empty scene
         if (c == ']') {
             fprintf(stderr, "Error: This scene is empty.\n");
             fclose(json);
@@ -182,9 +213,11 @@ void read_scene(FILE* json) {
             return;
         }
         
+        // checks for start of an object
         if (c == '{') {
             skip_ws(json);
             
+            // check that 'type' field is first
             char* key = next_string(json);
             if (strcmp(key, "type") != 0) {
                 fprintf(stderr, "Error: Expected 'type' key. (Line %d)\n", line);
@@ -195,24 +228,25 @@ void read_scene(FILE* json) {
             expect_c(json, ':');
             skip_ws(json);
             
+            // allocate space for an object
+            objects[i] = malloc(sizeof(Object));
             
+            // check what object is being read and calls a function depending on what it is
             char* value = next_string(json);
             if (strcmp(value, "camera") == 0) {
                 set_camera(json);
-            } else {
-                objects[i] = malloc(sizeof(Object));
-                
-                if (strcmp(value, "sphere") == 0) {
-                    parse_sphere(json, objects[i]);
-                } else if (strcmp(value, "plane") == 0) {
-                    parse_plane(json, objects[i]);
-                } else {
-                    fprintf(stderr, "Error: Unknown type '%s'. (Line %d)\n", value, line);
-                    exit(1);
-                }
+            } else if (strcmp(value, "sphere") == 0) {
+                parse_sphere(json, objects[i]);
                 i++;
+            } else if (strcmp(value, "plane") == 0) {
+                parse_plane(json, objects[i]);
+                i++;
+            } else {
+                fprintf(stderr, "Error: Unknown type '%s'. (Line %d)\n", value, line);
+                exit(1);
             }
             
+            // check for more objects
             skip_ws(json);
             c = next_c(json);
             if (c == ',') {
@@ -226,6 +260,7 @@ void read_scene(FILE* json) {
                 exit(1);
             }
             
+            // check if scene has too many objects in it
             if (i == 129) {
                 objects[i] = NULL;
                 fclose(json);
@@ -239,10 +274,12 @@ void read_scene(FILE* json) {
     }
 }
 
+// reads camera data from json file
 void set_camera(FILE* json) {
     int c;
     skip_ws(json);
     
+    // checks fields in camera
     while (1) {
         c = next_c(json);
         if (c == '}') {
@@ -254,7 +291,9 @@ void set_camera(FILE* json) {
             skip_ws(json);
             expect_c(json, ':');
             skip_ws(json);
+            
             double value = next_number(json);
+            // checks that field can be in camera and sets 'w' or 'h' if found
             if (strcmp(key, "width") == 0) {
                 w = value;
             } else if (strcmp(key, "height") == 0) {
@@ -267,17 +306,21 @@ void set_camera(FILE* json) {
     }
 }
 
+// gets sphere information and stores it into an object
 void parse_sphere(FILE* json, Object* object) {
     int c;
     
+    // used to check that all fields for a sphere are present
     int hasradius = 0;
     int hascolor = 0;
     int hasposition = 0;
     
+    // set object kind to sphere
     object->kind = SPHERE;
     
     skip_ws(json);
     
+    // check fields for this sphere
     while(1) {
         c = next_c(json);
         if (c == '}') {
@@ -290,6 +333,7 @@ void parse_sphere(FILE* json, Object* object) {
             expect_c(json, ':');
             skip_ws(json);
             
+            // set values for this sphere depending on what key was read and sets its 'boolean' to reflect the found field
             if (strcmp(key, "radius") == 0) {
                 object->sphere.radius = next_number(json);
                 hasradius = 1;
@@ -312,6 +356,7 @@ void parse_sphere(FILE* json, Object* object) {
         }
     }
     
+    // check for missing fields
     if (!hasradius) {
         fprintf(stderr, "Error: Sphere missing 'radius' field. (Line %d)\n", line);
         exit(1);
@@ -328,17 +373,21 @@ void parse_sphere(FILE* json, Object* object) {
     }
 }
 
+// gets plane information and stores it into an object
 void parse_plane(FILE* json, Object* object) {
     int c;
     
+    // used to check that all fields for a plane are present
     int hasnormal = 0;
     int hascolor = 0;
     int hasposition = 0;
     
+    // set object kind to plane
     object->kind = PLANE;
     
     skip_ws(json);
     
+    // check fields for this plane
     while(1) {
         c = next_c(json);
         if (c == '}') {
@@ -351,6 +400,7 @@ void parse_plane(FILE* json, Object* object) {
             expect_c(json, ':');
             skip_ws(json);
             
+            // set values for this plane depending on what key was read and sets its 'boolean' to reflect the found field
             double* value = next_vector(json);
             if (strcmp(key, "normal") == 0) {
                 object->plane.normal[0] = value[0];
@@ -374,6 +424,7 @@ void parse_plane(FILE* json, Object* object) {
         }
     }
     
+    // check for missing fields
     if (!hasnormal) {
         fprintf(stderr, "Error: Plane missing 'normal' field. (Line %d)\n", line);
         exit(1);
@@ -390,17 +441,20 @@ void parse_plane(FILE* json, Object* object) {
     }
 }
 
+// calculate the sphere intersect
 double sphere_intersect(double* Ro, double* Rd, double* C, double r) {
     double a = sqr(Rd[0]) + sqr(Rd[1]) + sqr(Rd[2]);
     double b = 2*(Rd[0]*(Ro[0]-C[0]) + Rd[1]*(Ro[1]-C[1]) + Rd[2]*(Ro[2]-C[2]));
     double c = sqr(Ro[0]-C[0]) + sqr(Ro[1]-C[1]) + sqr(Ro[2]-C[2]) - sqr(r);
     
+    // check determinant
     double det = sqr(b) - 4*a*c;
     if (det < 0)
         return -1;
     
     det = sqrt(det);
     
+    // return t value if an intersect was found, otherwise return -1
     double t0 = (-b - det) / (2*a);
     if (t0 > 0)
         return t0;
@@ -412,18 +466,20 @@ double sphere_intersect(double* Ro, double* Rd, double* C, double r) {
     return -1;
 }
 
+// calculate the plane intersect
 double plane_intersect(double* Ro, double* Rd, double* P, double* N) {
     // dot product of normal and position to find distance 
     double d = N[0]*P[0] + N[1]*P[1] + N[2]*P[2]; 
     double t = -(N[0]*Ro[0] + N[1]*Ro[1] + N[2]*Ro[2] + d) / (N[0]*Rd[0] + N[1]*Rd[1] + N[2]*Rd[2]);
     
-    // return positive number if there is an intersection
+    // return t value if an intersect was found, otherwise return -1
     if (t > 0)
         return t;
     
     return -1;
 }
 
+// skips white space in file
 void skip_ws(FILE* json) {
     int c = next_c(json);
     
@@ -433,22 +489,27 @@ void skip_ws(FILE* json) {
     ungetc(c, json);
 }
 
+// check that a certain character is next in file
 void expect_c(FILE* json, int d) {
     int c = next_c(json);
     
     if (c == d)
         return;
     
+    // error if the character found was not what was expected
     fprintf(stderr, "Error: Expected '%c'. (Line %d)\n", d, line);
     exit(1);
 }
 
+// get the next character in file
 int next_c(FILE* json) {
     int c = fgetc(json);
     
+    // increment line if newline was found in file
     if (c == '\n')
         line++;
     
+    // error if end of file found when another character was expected
     if (c == EOF) {
         fprintf(stderr, "Error: Unexpected end of file. (Line %d)\n", line);
         exit(1);
@@ -457,10 +518,12 @@ int next_c(FILE* json) {
     return c;
 }
 
+// get next string in file
 char* next_string(FILE* json) {
     char buffer[129];
     int c = next_c(json);
     
+    // look for start of a string
     if (c != '"') {
         fprintf(stderr, "Error: Expected string. (Line %d)\n", line);
         exit(1);
@@ -469,33 +532,41 @@ char* next_string(FILE* json) {
     c = next_c(json);
     
     int i = 0;
+    // get characters until the end of the string is found or string becomes bigger than 128 characters
     while (c != '"') {
+        // checks length
         if (i >= 128) {
             fprintf(stderr, "Error: Strings longer than 128 characters in length are not supported. (Line %d)\n", line);
             exit(1);
         }
         
+        // checks for escape codes
         if (c == '\\') {
             fprintf(stderr, "Error: Strings with escape codes are not supported. (Line %d)\n", line);
             exit(1);
         }
         
+        // checks that all characters in file are ASCII
         if (c < 32 || c > 126) {
             fprintf(stderr, "Error: Strings may only contain ASCII characters. (Line %d)\n", line);
             exit(1);
         }
         
+        // saves character to buffer and increment index
         buffer[i] = c;
         i++;
         c = next_c(json);
     }
     
+    // null terminate string
     buffer[i] = 0;
     return strdup(buffer);
 }
 
+// gets next number in file
 double next_number(FILE* json) {
     double value;
+    // look for number, error if one is not found
     if (fscanf(json, "%lf", &value) != 1) {
         fprintf(stderr, "Error: Number value not found. (Line %d)\n", line);
         exit(1);
@@ -504,24 +575,29 @@ double next_number(FILE* json) {
     return value;
 }
 
+// get next 3 number vector in file
 double* next_vector(FILE* json) {
     double* v = malloc(3*sizeof(double));
     
+    // check for start of vector and first number
     expect_c(json, '[');
     skip_ws(json);
     v[0] = next_number(json);
     skip_ws(json);
     
+    // check for second number
     expect_c(json, ',');
     skip_ws(json);
     v[1] = next_number(json);
     skip_ws(json);
     
+    // check for third number
     expect_c(json, ',');
     skip_ws(json);
     v[2] = next_number(json);
     skip_ws(json);
     
+    // check for end of vector
     expect_c(json, ']');
     return v;
 }
