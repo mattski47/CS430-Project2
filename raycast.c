@@ -13,8 +13,6 @@
 
 #define SPHERE 0
 #define PLANE 1
-#define HEIGHT 100
-#define WIDTH 100
 #define MAXCOLOR 255
 
 typedef struct {
@@ -49,7 +47,7 @@ static inline void normalize(double* v) {
     v[2] /= len;
 }
 
-void read_scene(char*);
+void read_scene(FILE*);
 void set_camera(FILE*);
 void parse_sphere(FILE*, Object*);
 void parse_plane(FILE*, Object*);
@@ -61,7 +59,7 @@ int next_c(FILE*);
 char* next_string(FILE*);
 double next_number(FILE*);
 double* next_vector(FILE*);
-void output_p6();
+void output_p6(FILE*);
 
 int line = 1;
 Object** objects;
@@ -76,15 +74,33 @@ double cy = 0;
 // height, width of image
 int M;
 int N;
-/*
- * 
- */
+
 int main(int argc, char** argv) {
-    objects = malloc(sizeof(Object*)*129);
-    read_scene("test2.json");
+    if (argc != 5) {
+        fprintf(stderr, "Error: Arguments should be in format: 'width' 'height' 'source' 'dest'.\n");
+        exit(1);
+    }
     
-    M = HEIGHT;
-    N = WIDTH;
+    N = atoi(argv[1]);
+    if (N == 0) {
+        fprintf(stderr, "Error: Argument 1, 'width' must be a non-zero integer.\n");
+        exit(1);
+    }
+    
+    M = atoi(argv[2]);
+    if (M == 0) {
+        fprintf(stderr, "Error: Argument 2, 'height' must be a non-zero integer.\n");
+        exit(1);
+    }
+    
+    FILE* json = fopen(argv[3], "r");
+    if (json == NULL) {
+        fprintf(stderr, "Error: Could not open file '%s'.\n", argv[3]);
+        exit(1);
+    }
+    
+    objects = malloc(sizeof(Object*)*129);
+    read_scene(json);
     
     double pixheight = h/M;
     double pixwidth = w/N;
@@ -137,26 +153,20 @@ int main(int argc, char** argv) {
         }
     }
     
-    FILE* output = fopen("output.ppm", "w");
+    FILE* output = fopen(argv[4], "w");
     if (output == NULL) {
-        fprintf(stderr, "Error: Could not create file '%s'.\n", "output.ppm");
+        fprintf(stderr, "Error: Could not create file '%s'.\n", argv[4]);
         exit(1);
     }
     
-    output_p6(output, M, N);
+    output_p6(output);
     fclose(output);
     
     return (EXIT_SUCCESS);
 }
 
-void read_scene(char* filename) {
+void read_scene(FILE* json) {
     int c;
-    FILE* json = fopen(filename, "r");
-    
-    if (json == NULL) {
-        fprintf(stderr, "Error: Could not open file '%s'.\n", filename);
-        exit(1);
-    }
     
     skip_ws(json);
     expect_c(json, '[');
