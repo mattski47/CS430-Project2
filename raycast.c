@@ -51,6 +51,8 @@ static inline void normalize(double* v) {
 
 void read_scene(char*);
 void set_camera(FILE*);
+void parse_sphere(FILE*, Object*);
+void parse_plane(FILE*, Object*);
 double sphere_intersect(double*, double*, double*, double);
 double plane_intersect(double*, double*, double*, double*);
 void skip_ws(FILE*);
@@ -65,23 +67,24 @@ int line = 1;
 Object** objects;
 Pixel* pixmap;
 
-// camera
-double h = 0.7;
-double w = 0.7;
+// default camera
+double h = 1;
+double w = 1;
+double cx = 0;
+double cy = 0;
 
+// height, width of image
+int M;
+int N;
 /*
  * 
  */
 int main(int argc, char** argv) {
     objects = malloc(sizeof(Object*)*129);
-    read_scene("example.json");
+    read_scene("test2.json");
     
-    // more camera
-    double cx = 0;
-    double cy = 0;
-    
-    int M = HEIGHT;
-    int N = WIDTH;
+    M = HEIGHT;
+    N = WIDTH;
     
     double pixheight = h/M;
     double pixwidth = w/N;
@@ -135,6 +138,11 @@ int main(int argc, char** argv) {
     }
     
     FILE* output = fopen("output.ppm", "w");
+    if (output == NULL) {
+        fprintf(stderr, "Error: Could not create file '%s'.\n", "output.ppm");
+        exit(1);
+    }
+    
     output_p6(output, M, N);
     fclose(output);
     
@@ -165,13 +173,11 @@ void read_scene(char* filename) {
         }
         
         if (c == '{') {
-            objects[i] = malloc(sizeof(Object));
-            
             skip_ws(json);
             
             char* key = next_string(json);
             if (strcmp(key, "type") != 0) {
-                fprintf(stderr, "Error: Expected 'type' key on line number %d.\n", line);
+                fprintf(stderr, "Error: Expected 'type' key. (Line %d)\n", line);
                 exit(1);
             }
             
@@ -183,92 +189,17 @@ void read_scene(char* filename) {
             char* value = next_string(json);
             if (strcmp(value, "camera") == 0) {
                 set_camera(json);
-            } else if (strcmp(value, "sphere") == 0) {
-                objects[i]->kind = SPHERE;
-            } else if (strcmp(value, "plane") == 0) {
-                objects[i]->kind = PLANE;
             } else {
-                fprintf(stderr, "Error: Unknown type, '%s', on line number %d.\n", value, line);
-                exit(1);
-            }
-            
-            skip_ws(json);
-            
-            if (strcmp(value, "camera") != 0) {
-                while (1) {
-                    c = next_c(json);
-                    if (c == '}') {
-                        break;
-                    } else if (c == ',') {
-                        skip_ws(json);
-                        char* key = next_string(json);
-
-                        skip_ws(json);
-                        expect_c(json, ':');
-                        skip_ws(json);
-
-                        if (strcmp(key, "radius") == 0) {
-                            double value = next_number(json);
-                            if (objects[i]->kind == SPHERE) {
-                                if (strcmp(key, "radius") == 0) {
-                                    objects[i]->sphere.radius = value;
-                                } else {
-                                    fprintf(stderr, "Error: Unknown property '%s' for 'sphere' on line number %d.\n", key, line);
-                                    exit(1);
-                                }
-                            } else if (objects[i]->kind == PLANE) {
-                                fprintf(stderr, "Error: Unknown property '%s' for 'plane' on line number %d.\n", key, line);
-                                    exit(1);
-                            }
-                        } else if ((strcmp(key, "color") == 0) || 
-                                   (strcmp(key, "position") == 0) || 
-                                   (strcmp(key, "normal") == 0)) {
-                            double* value = next_vector(json);
-                            
-                            //printf("%f %f %f\n", value[0], value[1], value[2]);
-                            if (objects[i]->kind == SPHERE) {
-                                if (strcmp(key, "color") == 0) {
-                                    objects[i]->color[0] = value[0];
-                                    objects[i]->color[1] = value[1];
-                                    objects[i]->color[2] = value[2];
-                                } else if (strcmp(key, "position") == 0) {
-                                    objects[i]->position[0] = value[0];
-                                    objects[i]->position[1] = -value[1];
-                                    objects[i]->position[2] = value[2];
-                                } else {
-                                    fprintf(stderr, "Error: Unknown property '%s' for 'sphere' on line number %d.\n", key, line);
-                                    exit(1);
-                                }
-                            } else if (objects[i]->kind == PLANE) {
-                                if (strcmp(key, "color") == 0) {
-                                    objects[i]->color[0] = value[0];
-                                    objects[i]->color[1] = value[1];
-                                    objects[i]->color[2] = value[2];
-                                } else if (strcmp(key, "position") == 0) {
-                                    objects[i]->position[0] = value[0];
-                                    objects[i]->position[1] = value[1];
-                                    objects[i]->position[2] = value[2];
-                                } else if (strcmp(key, "normal") == 0) {
-                                    objects[i]->plane.normal[0] = value[0];
-                                    objects[i]->plane.normal[1] = value[1];
-                                    objects[i]->plane.normal[2] = value[2];
-                                } else {
-                                    fprintf(stderr, "Error: Unknown property '%s' for 'plane' on line number %d.\n", key, line);
-                                    exit(1);
-                                }
-                            }
-                        } else {
-                            fprintf(stderr, "Error: Unknown property '%s' on line number %d.\n", key, line);
-                            exit(1);
-                        }
-
-                        skip_ws(json);
-                    } else {
-                        fprintf(stderr, "Error: Unexpected value on line number %d.\n", line);
-                        exit(1);
-                    }
+                objects[i] = malloc(sizeof(Object));
+                
+                if (strcmp(value, "sphere") == 0) {
+                    parse_sphere(json, objects[i]);
+                } else if (strcmp(value, "plane") == 0) {
+                    parse_plane(json, objects[i]);
+                } else {
+                    fprintf(stderr, "Error: Unknown type '%s'. (Line %d)\n", value, line);
+                    exit(1);
                 }
-
                 i++;
             }
             
@@ -281,18 +212,18 @@ void read_scene(char* filename) {
                 fclose(json);
                 return;
             } else {
-                fprintf(stderr, "Error: Expecting ',' or ']' on line number %d.\n", line);
+                fprintf(stderr, "Error: Expecting ',' or ']'. (Line %d)\n", line);
                 exit(1);
             }
+            
             if (i == 129) {
                 objects[i] = NULL;
                 fclose(json);
                 fprintf(stderr, "Error: Too many objects in file.\n");
                 return;
             }
-            
         } else {
-            fprintf(stderr, "Error: Expecting '{' on line number %d.\n", line);
+            fprintf(stderr, "Error: Expecting '{'. (Line %d)\n", line);
             exit(1);
         }
     }
@@ -319,10 +250,133 @@ void set_camera(FILE* json) {
             } else if (strcmp(key, "height") == 0) {
                 h = value;
             } else {
-                fprintf(stderr, "Error: Unknown property '%s' for 'camera' on line number %d.\n", key, line);
+                fprintf(stderr, "Error: Unknown property '%s' for 'camera'. (Line %d)\n", key, line);
                 exit(1);
             }
         }
+    }
+}
+
+void parse_sphere(FILE* json, Object* object) {
+    int c;
+    
+    int hasradius = 0;
+    int hascolor = 0;
+    int hasposition = 0;
+    
+    object->kind = SPHERE;
+    
+    skip_ws(json);
+    
+    while(1) {
+        c = next_c(json);
+        if (c == '}') {
+            break;
+        } else if (c == ',') {
+            skip_ws(json);
+            char* key = next_string(json);
+
+            skip_ws(json);
+            expect_c(json, ':');
+            skip_ws(json);
+            
+            if (strcmp(key, "radius") == 0) {
+                object->sphere.radius = next_number(json);
+                hasradius = 1;
+            } else if (strcmp(key, "color") == 0) {
+                double* value = next_vector(json);
+                object->color[0] = value[0];
+                object->color[1] = value[1];
+                object->color[2] = value[2];
+                hascolor = 1;
+            } else if (strcmp(key, "position") == 0) {
+                double* value = next_vector(json);
+                object->position[0] = value[0];
+                object->position[1] = -value[1];
+                object->position[2] = value[2];
+                hasposition = 1;
+            } else {
+                fprintf(stderr, "Error: Unknown property '%s' for 'sphere'. (Line %d)\n", key, line);
+                exit(1);
+            }
+        }
+    }
+    
+    if (!hasradius) {
+        fprintf(stderr, "Error: Sphere missing 'radius' field. (Line %d)\n", line);
+        exit(1);
+    }
+    
+    if (!hascolor) {
+        fprintf(stderr, "Error: Sphere missing 'color' field. (Line %d)\n", line);
+        exit(1);
+    }
+    
+    if (!hasposition) {
+        fprintf(stderr, "Error: Sphere missing 'position' field. (Line %d)\n", line);
+        exit(1);
+    }
+}
+
+void parse_plane(FILE* json, Object* object) {
+    int c;
+    
+    int hasnormal = 0;
+    int hascolor = 0;
+    int hasposition = 0;
+    
+    object->kind = PLANE;
+    
+    skip_ws(json);
+    
+    while(1) {
+        c = next_c(json);
+        if (c == '}') {
+            break;
+        } else if (c == ',') {
+            skip_ws(json);
+            char* key = next_string(json);
+
+            skip_ws(json);
+            expect_c(json, ':');
+            skip_ws(json);
+            
+            double* value = next_vector(json);
+            if (strcmp(key, "normal") == 0) {
+                object->plane.normal[0] = value[0];
+                object->plane.normal[1] = value[1];
+                object->plane.normal[2] = value[2];
+                hasnormal = 1;
+            } else if (strcmp(key, "color") == 0) {
+                object->color[0] = value[0];
+                object->color[1] = value[1];
+                object->color[2] = value[2];
+                hascolor = 1;
+            } else if (strcmp(key, "position") == 0) {
+                object->position[0] = value[0];
+                object->position[1] = value[1];
+                object->position[2] = value[2];
+                hasposition = 1;
+            } else {
+                fprintf(stderr, "Error: Unknown property '%s' for 'sphere'. (Line %d)\n", key, line);
+                exit(1);
+            }
+        }
+    }
+    
+    if (!hasnormal) {
+        fprintf(stderr, "Error: Plane missing 'normal' field. (Line %d)\n", line);
+        exit(1);
+    }
+    
+    if (!hascolor) {
+        fprintf(stderr, "Error: Plane missing 'color' field. (Line %d)\n", line);
+        exit(1);
+    }
+    
+    if (!hasposition) {
+        fprintf(stderr, "Error: Plane missing 'position' field. (Line %d)\n", line);
+        exit(1);
     }
 }
 
@@ -366,7 +420,6 @@ void skip_ws(FILE* json) {
     while(isspace(c))
         c = next_c(json);
     
-    //printf("%c", c);
     ungetc(c, json);
 }
 
@@ -376,7 +429,7 @@ void expect_c(FILE* json, int d) {
     if (c == d)
         return;
     
-    fprintf(stderr, "Error: Expected '%c' on line number %d.\n", d, line);
+    fprintf(stderr, "Error: Expected '%c'. (Line %d)\n", d, line);
     exit(1);
 }
 
@@ -387,11 +440,9 @@ int next_c(FILE* json) {
         line++;
     
     if (c == EOF) {
-        fprintf(stderr, "Error: Unexpected end of file on line number %d.\n", line);
+        fprintf(stderr, "Error: Unexpected end of file. (Line %d)\n", line);
         exit(1);
     }
-    
-    //printf("%c", c);
     
     return c;
 }
@@ -401,7 +452,7 @@ char* next_string(FILE* json) {
     int c = next_c(json);
     
     if (c != '"') {
-        fprintf(stderr, "Error: Expected string on line number %d.\n", line);
+        fprintf(stderr, "Error: Expected string. (Line %d)\n", line);
         exit(1);
     }
     
@@ -410,17 +461,17 @@ char* next_string(FILE* json) {
     int i = 0;
     while (c != '"') {
         if (i >= 128) {
-            fprintf(stderr, "Error: Strings longer than 128 characters in length are not supported.\n");
+            fprintf(stderr, "Error: Strings longer than 128 characters in length are not supported. (Line %d)\n", line);
             exit(1);
         }
         
         if (c == '\\') {
-            fprintf(stderr, "Error: Strings with escape codes are not supported.\n");
+            fprintf(stderr, "Error: Strings with escape codes are not supported. (Line %d)\n", line);
             exit(1);
         }
         
         if (c < 32 || c > 126) {
-            fprintf(stderr, "Error: Strings may only contain ASCII characters.\n");
+            fprintf(stderr, "Error: Strings may only contain ASCII characters. (Line %d)\n", line);
             exit(1);
         }
         
@@ -436,10 +487,10 @@ char* next_string(FILE* json) {
 double next_number(FILE* json) {
     double value;
     if (fscanf(json, "%lf", &value) != 1) {
-        fprintf(stderr, "Error: Number value not found on line number %d.\n", line);
+        fprintf(stderr, "Error: Number value not found. (Line %d)\n", line);
         exit(1);
     }
-    //printf("%lf %d\n", value, line);
+    
     return value;
 }
 
@@ -461,16 +512,14 @@ double* next_vector(FILE* json) {
     v[2] = next_number(json);
     skip_ws(json);
     
-    
-    //printf("%f %f %f\n", v[0], v[1], v[2]);
     expect_c(json, ']');
     return v;
 }
 
 // outputs data in buffer to output file
-void output_p6(FILE* outputfp, int h, int w) {
+void output_p6(FILE* outputfp) {
     // create header
-    fprintf(outputfp, "P6\n%d %d\n%d\n", h, w, MAXCOLOR);
+    fprintf(outputfp, "P6\n%d %d\n%d\n", M, N, MAXCOLOR);
     // writes buffer to output Pixel by Pixel
-    fwrite(pixmap, sizeof(Pixel), h*w, outputfp);
+    fwrite(pixmap, sizeof(Pixel), M*N, outputfp);
 }
