@@ -90,17 +90,17 @@ int main(int argc, char** argv) {
         exit(1);
     }
     
-    // check that 'width' is a non-zero number
+    // check that 'width' is a positive number
     N = atoi(argv[1]);
-    if (N == 0) {
-        fprintf(stderr, "Error: Argument 1, 'width' must be a non-zero integer.\n");
+    if (N <= 0) {
+        fprintf(stderr, "Error: Argument 1, 'width' must be a positive integer.\n");
         exit(1);
     }
     
-    // check that 'height' is a non-zero number
+    // check that 'height' is a positive number
     M = atoi(argv[2]);
-    if (M == 0) {
-        fprintf(stderr, "Error: Argument 2, 'height' must be a non-zero integer.\n");
+    if (M <= 0) {
+        fprintf(stderr, "Error: Argument 2, 'height' must be a positive integer.\n");
         exit(1);
     }
     
